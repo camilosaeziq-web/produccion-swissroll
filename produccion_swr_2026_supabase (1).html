@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control de Producción — Área de Envase</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+:root{
+  --navy:#0A1F3C; --blue:#1255A0; --blue-l:#E3F2FD;
+  --man-c:#1565C0; --man-l:#E3F2FD;
+  --tar-c:#C84B00; --tar-l:#FFF3E0;
+  --noc-c:#4527A0; --noc-l:#EDE7F6;
+  --green:#2E7D32; --green-l:#E8F5E9;
+  --red:#B71C1C; --red-l:#FFEBEE;
+  --amber:#E65100; --amber-l:#FFF3E0;
+  --border:#D4DCE8; --surface:#F4F6FA;
+  --text:#1A2332; --muted:#6B7A8D;
+  --mono:'IBM Plex Mono',monospace;
+  --sans:'IBM Plex Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:13px}
+body{font-family:var(--sans);background:var(--surface);color:var(--text)}
+/* ── TOPBAR ── */
+.topbar{background:var(--navy);padding:0 20px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200}
+.topbar-brand{color:#fff;font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.5px}
+.topbar-sub{color:#7BAFD4;font-size:11px;margin-top:2px}
+.topbar-right{display:flex;gap:12px;align-items:center}
+.clock{font-family:var(--mono);color:#7BAFD4;font-size:13px}
+.date-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:3px 8px;color:#A8C4E0;font-size:11px}
+.conn-badge{font-size:10px;padding:3px 8px;border-radius:10px;font-weight:600;transition:all .3s}
+.conn-badge.online{background:#1B5E20;color:#A5D6A7}
+.conn-badge.offline{background:#B71C1C;color:#FFCDD2}
+.conn-badge.connecting{background:#E65100;color:#FFE0B2}
+/* ── MODE SWITCHER ── */
+.mode-bar{display:flex;align-items:center;justify-content:center;gap:0;background:#fff;border-bottom:2px solid var(--navy);padding:0}
+.mode-btn{flex:1;max-width:280px;padding:12px 20px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:transparent;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .15s;font-family:var(--sans)}
+.mode-btn.active{color:var(--navy);border-bottom-color:var(--navy);font-weight:600}
+.mode-btn:hover:not(.active){background:var(--surface)}
+.mode-sep{width:1px;height:36px;background:var(--border);margin:8px 0}
+/* ── PANELS ── */
+.panel{display:none}.panel.active{display:block}
+/* ── LOADING OVERLAY ── */
+.loading-overlay{position:fixed;inset:0;background:rgba(10,31,60,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;gap:14px}
+.loading-overlay.hidden{display:none}
+.spinner{width:36px;height:36px;border:3px solid rgba(255,255,255,.2);border-top-color:#7BAFD4;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{color:#A8C4E0;font-family:var(--mono);font-size:13px}
+/* ── OPERATOR FORM ── */
+.op-wrap{max-width:680px;margin:24px auto;padding:0 16px 60px}
+.op-header{background:var(--navy);border-radius:10px 10px 0 0;padding:18px 22px;color:#fff}
+.op-header h1{font-size:16px;font-weight:600}
+.op-header p{color:#7BAFD4;font-size:11px;margin-top:4px}
+.op-body{background:#fff;border:1px solid var(--border);border-top:none;border-radius:0 0 10px 10px;padding:20px 22px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.form-group select,.form-group input[type=date],.form-group input[type=text]{font-family:var(--sans);font-size:13px;border:1.5px solid var(--border);border-radius:6px;padding:8px 12px;height:38px;color:var(--text);background:#fff;outline:none;transition:border-color .15s}
+.form-group select:focus,.form-group input:focus{border-color:var(--blue)}
+.shift-indicator{border-radius:6px;padding:8px 14px;font-size:12px;font-weight:500;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.shift-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.sec-title{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px 0 6px;border-bottom:1px solid var(--border);margin-bottom:8px}
+.sku-entry{display:grid;grid-template-columns:1fr 90px;gap:8px;align-items:center;padding:6px 0;border-bottom:.5px solid var(--border)}
+.sku-entry:last-child{border-bottom:none}
+.sku-info{display:flex;flex-direction:column}
+.sku-name-f{font-weight:500;font-size:12px}
+.sku-code-f{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.bdj-input{font-family:var(--mono);font-size:14px;font-weight:600;text-align:center;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;width:100%;height:36px;color:var(--text);background:#fff;outline:none}
+.bdj-input:focus{border-color:var(--blue)}
+.bdj-input:not(:placeholder-shown){border-color:var(--green);background:var(--green-l)}
+.submit-area{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.btn-submit{font-family:var(--sans);font-size:13px;font-weight:600;background:var(--green);color:#fff;border:none;border-radius:8px;padding:10px 28px;cursor:pointer;transition:background .15s}
+.btn-submit:hover{background:#1B5E20}
+.btn-submit:disabled{background:#9E9E9E;cursor:not-allowed}
+.submit-note{font-size:11px;color:var(--muted)}
+.toast{display:none;border-radius:8px;padding:12px 18px;font-size:12px;margin-top:12px;align-items:center;gap:8px}
+.toast.show{display:flex}
+.toast.success{background:#1B5E20;color:#fff}
+.toast.error{background:#B71C1C;color:#fff}
+/* ── DASHBOARD ── */
+.config-panel{background:#fff;border-bottom:1px solid var(--border);padding:9px 20px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.config-panel label{font-size:11px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.5px}
+.week-chip{font-size:12px;font-weight:600;color:var(--blue);background:var(--blue-l);border-radius:4px;padding:4px 10px}
+.btn{font-family:var(--sans);font-size:11px;font-weight:500;border:1px solid var(--border);background:#fff;border-radius:4px;padding:5px 12px;height:30px;cursor:pointer;color:var(--text);transition:background .15s}
+.btn:hover{background:var(--surface)}
+.btn-success{background:var(--green);color:#fff;border-color:var(--green)}
+.btn-success:hover{background:#1B5E20}
+.btn-danger{border-color:#EF9A9A;color:var(--red)}
+.btn-danger:hover{background:var(--red-l)}
+.btn-primary{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn-primary:hover{background:#1a3a6e}
+.kpi-bar{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border);border-bottom:2px solid var(--navy)}
+.kpi{background:#fff;padding:9px 12px;text-align:center}
+.kpi-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+.kpi-val{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--navy)}
+.kpi-val.ok{color:var(--green)}.kpi-val.warn{color:var(--amber)}.kpi-val.danger{color:var(--red)}
+.kpi-sub{font-size:10px;color:var(--muted);margin-top:1px}
+.shift-legend{display:flex;gap:20px;align-items:center;padding:7px 20px;background:#fff;border-bottom:1px solid var(--border);font-size:11px;flex-wrap:wrap}
+.shift-chip-l{display:flex;align-items:center;gap:6px;font-weight:500}
+.sdot{width:10px;height:10px;border-radius:2px}
+.table-container{overflow-x:auto;padding:14px 20px 60px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;border:1px solid var(--border);table-layout:fixed;min-width:900px}
+.th-prod{background:var(--navy);color:#fff}
+.th-ped{background:#0D47A1;color:#fff}
+.th-man{background:var(--man-c);color:#fff}
+.th-tar{background:var(--tar-c);color:#fff}
+.th-noc{background:var(--noc-c);color:#fff}
+.th-tot{background:#263238;color:#fff}
+th{padding:7px 7px;font-size:10px;font-weight:600;text-align:center;text-transform:uppercase;letter-spacing:.4px;border-right:1px solid rgba(255,255,255,.1)}
+th.left{text-align:left;padding-left:12px}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+tbody tr:hover{background:#F8FAFF}
+td{padding:5px 8px;text-align:center;vertical-align:middle;font-size:12px;color:var(--text);border-right:1px solid var(--border)}
+td.left{text-align:left;padding-left:12px}
+.sku-code-t{font-family:var(--mono);font-size:10px;color:var(--muted);display:block}
+.sku-name-t{font-weight:500;font-size:12px}
+.bg-man{background:#F5F9FF}.bg-tar{background:#FFFAF5}.bg-noc{background:#F8F5FF}
+.mono-num{font-family:var(--mono);font-weight:600}
+.num-input{font-family:var(--mono);font-size:12px;text-align:center;width:64px;padding:3px 4px;border:1px solid var(--border);border-radius:3px;background:#fff;color:var(--text);outline:none}
+.num-input:focus{border-color:var(--blue)}
+.prog-wrap{background:#EEF2F8;border-radius:3px;height:6px;width:100%;overflow:hidden}
+.prog-bar{height:100%;border-radius:3px;transition:width .3s}
+.badge{font-size:10px;font-weight:500;padding:2px 7px;border-radius:10px;display:inline-block;min-width:70px;text-align:center;white-space:nowrap}
+.b-done{background:#BBDEFB;color:#0D47A1}.b-ok{background:var(--green-l);color:#1B5E20}
+.b-warn{background:var(--amber-l);color:#BF360C}.b-danger{background:var(--red-l);color:var(--red)}.b-empty{background:#ECEFF1;color:#607D8B}
+tfoot tr{background:var(--navy)!important}
+tfoot td{color:#fff;font-family:var(--mono);font-size:12px;font-weight:600;padding:8px 6px}
+/* ── HISTORY ── */
+.hist-container{padding:16px 20px 60px}
+.hist-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+.hist-header h2{font-size:14px;font-weight:600;color:var(--navy)}
+.hist-grid{display:grid;gap:10px}
+.hist-card{background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.hist-card-hd{background:var(--navy);color:#fff;padding:8px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none}
+.hist-card-title{font-size:12px;font-weight:600;font-family:var(--mono)}
+.hist-card-meta{font-size:11px;color:#7BAFD4}
+.hist-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border);border-bottom:1px solid var(--border)}
+.hkpi{background:#fff;padding:7px 10px;text-align:center}
+.hkpi-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.hkpi-val{font-family:var(--mono);font-size:16px;font-weight:600}
+.hkpi-val.ok{color:var(--green)}.hkpi-val.warn{color:var(--amber)}.hkpi-val.danger{color:var(--red)}
+.hist-detail{display:none;overflow-x:auto}
+.hist-detail.open{display:block}
+.hist-table{width:100%;border-collapse:collapse;min-width:600px;font-size:11px}
+.hist-table th{background:var(--surface);color:var(--muted);padding:5px 8px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border)}
+.hist-table th.left{text-align:left}
+.hist-table td{padding:5px 8px;text-align:center;border-bottom:.5px solid var(--border);font-family:var(--mono);font-size:11px}
+.hist-table td.left{text-align:left;font-family:var(--sans)}
+.empty-hist{text-align:center;padding:40px 20px;color:var(--muted);font-size:13px}
+/* ── LOG ── */
+.log-container{padding:16px 20px 60px}
+.log-table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;border:1px solid var(--border);overflow:hidden;font-size:11px}
+.log-table th{background:var(--surface);padding:6px 10px;text-align:center;font-size:10px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.log-table td{padding:5px 10px;text-align:center;border-bottom:.5px solid var(--border);font-family:var(--mono);font-size:11px}
+.log-table td.left{text-align:left;font-family:var(--sans)}
+/* ── TABS ── */
+.tabs{display:flex;background:#fff;border-bottom:2px solid var(--navy);padding:0 20px;gap:0;overflow-x:auto}
+.tab{padding:9px 16px;font-size:12px;font-weight:500;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;color:var(--muted);transition:all .15s;user-select:none;white-space:nowrap}
+.tab:hover{color:var(--navy)}
+.tab.active{color:var(--navy);border-bottom-color:var(--navy)}
+/* ── REALTIME PULSE ── */
+.rt-pulse{display:inline-block;width:7px;height:7px;border-radius:50%;background:#4CAF50;animation:pulse 2s ease-in-out infinite;margin-right:4px}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+/* ── AUDIT BADGE ── */
+.audit-badge{font-size:9px;background:#FFF8E1;color:#F57F17;border:1px solid #FFE082;border-radius:3px;padding:1px 5px;display:inline-block;margin-top:2px}
+.edited-row{background:#FFFDE7!important}
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(10,31,60,.7);z-index:500;display:flex;align-items:center;justify-content:center}
+.modal-overlay.hidden{display:none}
+.modal{background:#fff;border-radius:10px;width:440px;max-width:95vw;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal-hd{background:var(--navy);color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center}
+.modal-hd h3{font-size:14px;font-weight:600}
+.modal-close{background:none;border:none;color:#7BAFD4;font-size:18px;cursor:pointer;line-height:1}
+.modal-body{padding:18px}
+.modal-field{margin-bottom:14px}
+.modal-field label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px}
+.modal-field input,.modal-field select{font-family:var(--sans);font-size:13px;border:1.5px solid var(--border);border-radius:6px;padding:8px 12px;width:100%;outline:none;transition:border-color .15s}
+.modal-field input:focus,.modal-field select:focus{border-color:var(--blue)}
+.modal-field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.modal-footer{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.btn-modal-cancel{font-family:var(--sans);font-size:12px;border:1px solid var(--border);background:#fff;border-radius:6px;padding:7px 16px;cursor:pointer;color:var(--text)}
+.btn-modal-save{font-family:var(--sans);font-size:12px;background:var(--green);color:#fff;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-weight:600}
+.btn-modal-save:hover{background:#1B5E20}
+/* ── CONFIG BANNER ── */
+.config-banner{background:#FFF3CD;border:1px solid #FFD54F;border-radius:8px;padding:14px 18px;margin:20px;display:flex;align-items:flex-start;gap:12px}
+.config-banner.hidden{display:none}
+.config-banner-icon{font-size:20px;flex-shrink:0}
+.config-banner h3{font-size:13px;font-weight:600;color:#4A3800;margin-bottom:4px}
+.config-banner p{font-size:12px;color:#6B5000;line-height:1.5}
+.config-banner code{background:#FFECB3;padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:11px;color:#4A3800}
+</style>
+</head>
+<body>
+<!-- MODAL EDITAR REGISTRO -->
+<div class="modal-overlay hidden" id="edit-modal">
+  <div class="modal">
+    <div class="modal-hd">
+      <h3>✏ Editar registro</h3>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-field-row">
+        <div class="modal-field">
+          <label>Fecha</label>
+          <input type="date" id="edit-fecha" />
+        </div>
+        <div class="modal-field">
+          <label>Turno</label>
+          <select id="edit-turno">
+            <option value="mañana">☀ Mañana</option>
+            <option value="tarde">⛅ Tarde</option>
+            <option value="noche">🌙 Noche</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-field">
+        <label>Operador</label>
+        <input type="text" id="edit-operador" maxlength="40" />
+      </div>
+      <div class="modal-field">
+        <label>Producto</label>
+        <input type="text" id="edit-sku-name" disabled style="background:var(--surface);color:var(--muted)" />
+      </div>
+      <div class="modal-field">
+        <label>Bandejas</label>
+        <input type="number" id="edit-bandejas" min="1" />
+      </div>
+      <div class="modal-field">
+        <label>Tu nombre (supervisor que modifica)</label>
+        <input type="text" id="edit-supervisor" placeholder="Ingresa tu nombre..." maxlength="40" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" onclick="closeEditModal()">Cancelar</button>
+      <button class="btn-modal-save" onclick="saveEdit()">Guardar cambios</button>
+    </div>
+  </div>
+</div>
+<!-- LOADING OVERLAY -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loading-text">Conectando a la base de datos...</div>
+</div>
+<!-- CONFIG BANNER (visible si no hay credenciales) -->
+<div class="config-banner hidden" id="config-banner">
+  <div class="config-banner-icon">⚙️</div>
+  <div>
+    <h3>Configuración requerida — Credenciales Supabase</h3>
+    <p>
+      Edita este archivo HTML y reemplaza las dos variables al inicio del script:<br><br>
+      <code>SUPABASE_URL</code> → Tu URL del proyecto (ej: <code>https://xxxx.supabase.co</code>)<br>
+      <code>SUPABASE_KEY</code> → Tu clave <strong>anon/public</strong> del proyecto<br><br>
+      Encuéntralas en <strong>Supabase → Project Settings → API</strong>.
+    </p>
+  </div>
+</div>
+<!-- TOPBAR -->
+<div class="topbar">
+  <div>
+    <div class="topbar-brand">CONTROL DE PRODUCCIÓN — ÁREA DE ENVASE</div>
+    <div class="topbar-sub" id="topbar-meta">Semana sin configurar</div>
+  </div>
+  <div class="topbar-right">
+    <span class="conn-badge connecting" id="conn-badge">● Conectando...</span>
+    <div class="date-chip" id="today-chip"></div>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+</div>
+<!-- MODE SWITCHER -->
+<div class="mode-bar">
+  <button class="mode-btn active" onclick="showMode('operador')">📦 Ingreso operador</button>
+  <div class="mode-sep"></div>
+  <button class="mode-btn" onclick="showMode('supervisor')">📊 Dashboard supervisor</button>
+</div>
+<!-- ══ MODO OPERADOR ══ -->
+<div class="panel active" id="mode-operador">
+<div class="op-wrap">
+  <div class="op-header">
+    <h1>Registro diario de producción</h1>
+    <p>Ingresa las bandejas producidas por tu turno. Los datos se sincronizan automáticamente en todos los dispositivos.</p>
+  </div>
+  <div class="op-body">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Fecha</label>
+        <input type="date" id="op-fecha" />
+      </div>
+      <div class="form-group">
+        <label>Turno</label>
+        <select id="op-turno">
+          <option value="">— Selecciona turno —</option>
+          <option value="mañana">☀ Mañana (06:00 – 14:00)</option>
+          <option value="tarde">⛅ Tarde (14:00 – 22:00)</option>
+          <option value="noche">🌙 Noche (22:00 – 06:00)</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Nombre operador</label>
+        <input type="text" id="op-nombre" placeholder="Ingresa tu nombre..." maxlength="40" />
+      </div>
+    </div>
+    <div id="shift-indicator" class="shift-indicator" style="display:none"></div>
+    <div class="sec-title">Bandejas producidas por SKU (deja en blanco si no se produjo)</div>
+    <div id="op-sku-list"></div>
+    <div class="submit-area">
+      <button class="btn-submit" id="btn-submit" onclick="submitEntry()" disabled>Registrar producción</button>
+      <span class="submit-note">Los datos se sincronizan en tiempo real a todos los dispositivos.</span>
+    </div>
+    <div class="toast" id="toast"></div>
+  </div>
+</div>
+</div>
+<!-- ══ MODO SUPERVISOR ══ -->
+<div class="panel" id="mode-supervisor">
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('resumen')"><span class="rt-pulse"></span>Resumen semanal</div>
+    <div class="tab" onclick="showTab('registros')">Registros del día</div>
+    <div class="tab" onclick="showTab('historial')">Historial</div>
+  </div>
+  <!-- RESUMEN -->
+  <div class="panel active" id="tab-resumen">
+    <div class="config-panel">
+      <label>Semana:</label>
+      <span class="week-chip" id="sv-week-chip">—</span>
+      <button class="btn btn-primary" onclick="loadCurrentWeek()">Auto-detectar semana</button>
+      <label>Pedido semanal:</label>
+      <span style="font-size:11px;color:var(--muted)">Ingresa el pedido en la columna de la tabla</span>
+      <button class="btn btn-success" onclick="saveToHistory()" style="margin-left:auto">Cerrar semana al historial</button>
+      <button class="btn btn-danger" onclick="clearWeek()">Limpiar semana</button>
+    </div>
+    <div class="kpi-bar">
+      <div class="kpi"><div class="kpi-label">Pedido total</div><div class="kpi-val" id="kpi-ped">0</div><div class="kpi-sub">bandejas</div></div>
+      <div class="kpi"><div class="kpi-label">Total producido</div><div class="kpi-val ok" id="kpi-prod">0</div><div class="kpi-sub">bandejas</div></div>
+      <div class="kpi"><div class="kpi-label">Mañana</div><div class="kpi-val" id="kpi-man" style="color:var(--man-c)">0</div><div class="kpi-sub">bandejas</div></div>
+      <div class="kpi"><div class="kpi-label">Tarde</div><div class="kpi-val" id="kpi-tar" style="color:var(--tar-c)">0</div><div class="kpi-sub">bandejas</div></div>
+      <div class="kpi"><div class="kpi-label">Noche</div><div class="kpi-val" id="kpi-noc" style="color:var(--noc-c)">0</div><div class="kpi-sub">bandejas</div></div>
+      <div class="kpi"><div class="kpi-label">Cumplimiento</div><div class="kpi-val" id="kpi-cumpl">—</div><div class="kpi-sub" id="kpi-sub">sin datos</div></div>
+    </div>
+    <div class="shift-legend">
+      <strong style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Turnos:</strong>
+      <span class="shift-chip-l"><span class="sdot" style="background:var(--man-c)"></span><span style="color:var(--man-c)">Mañana</span> 06–14 h</span>
+      <span class="shift-chip-l"><span class="sdot" style="background:var(--tar-c)"></span><span style="color:var(--tar-c)">Tarde</span> 14–22 h</span>
+      <span class="shift-chip-l"><span class="sdot" style="background:var(--noc-c)"></span><span style="color:var(--noc-c)">Noche</span> 22–06 h</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--muted)">Unidad: <strong>bandejas</strong> · <span class="rt-pulse"></span>Tiempo real</span>
+    </div>
+    <div class="table-container">
+    <table>
+      <colgroup>
+        <col style="width:34px"><col style="width:68px"><col>
+        <col style="width:72px"><col style="width:70px"><col style="width:70px"><col style="width:70px">
+        <col style="width:70px"><col style="width:56px"><col style="width:70px"><col style="width:82px">
+      </colgroup>
+      <thead>
+        <tr>
+          <th class="th-prod">#</th><th class="th-prod">SKU</th><th class="th-prod left">Producto</th>
+          <th class="th-ped">Pedido<br><small style="font-weight:400;opacity:.8">bdjas</small></th>
+          <th class="th-man">☀ Mañana</th><th class="th-tar">⛅ Tarde</th><th class="th-noc">🌙 Noche</th>
+          <th class="th-tot">Total</th><th class="th-tot">%</th><th class="th-tot" style="background:#B71C1C">Faltantes</th><th class="th-tot">Estado</th>
+        </tr>
+      </thead>
+      <tbody id="sv-tbody"></tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3" class="left">TOTALES</td>
+          <td id="ft-ped">0</td><td id="ft-man">0</td><td id="ft-tar">0</td><td id="ft-noc">0</td>
+          <td id="ft-tot">0</td><td id="ft-pct">—</td><td id="ft-falt">—</td><td></td>
+        </tr>
+      </tfoot>
+    </table>
+    </div>
+  </div>
+  <!-- REGISTROS -->
+  <div class="panel" id="tab-registros">
+    <div class="log-container">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+        <h2 style="font-size:14px;font-weight:600;color:var(--navy)">Registros de la semana actual</h2>
+        <span style="font-size:11px;color:var(--muted)" id="log-count">0 registros</span>
+      </div>
+      <table class="log-table">
+        <thead>
+          <tr>
+            <th>Fecha</th><th>Turno</th><th class="left">Operador</th>
+            <th class="left">SKU</th><th class="left">Producto</th><th>Bandejas</th><th>Ingresado</th><th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="log-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+  <!-- HISTORIAL -->
+  <div class="panel" id="tab-historial">
+    <div class="hist-container">
+      <div class="hist-header">
+        <h2>Historial de semanas cerradas</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-size:11px;color:var(--muted)" id="hist-count">0 semanas</span>
+          <button class="btn btn-danger" onclick="clearHistory()">Borrar historial</button>
+        </div>
+      </div>
+      <div class="hist-grid" id="hist-grid">
+        <div class="empty-hist" id="hist-empty">No hay semanas cerradas aún.</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  ⚙️  CONFIGURACIÓN — CREDENCIALES SUPABASE
+// ═══════════════════════════════════════════════════════════════
+const SUPABASE_URL = "https://kjchxqmxfnpfpcomgtth.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtqY2h4cW14Zm5wZnBjb21ndHRoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NTk1NzEsImV4cCI6MjA5NTMzNTU3MX0.iIckG3N3O69hqEPH3NWFCfSRfw-aJjwGOdPpNd9mm6o";
+// ═══════════════════════════════════════════════════════════════
+const SKUS=[
+  {code:"25746",name:"Laguito 2p"},{code:"21287",name:"Laguito 8p"},{code:"503306",name:"Laguito 4p"},
+  {code:"501601",name:"Alfi 3p"},{code:"5477",name:"Alfi 2p"},{code:"964411",name:"Alfi 90p"},{code:"40382",name:"Alfi 10p"},
+  {code:"965264",name:"TKCH 8cm"},{code:"965262",name:"TKCH 11cm"},{code:"965263",name:"Rollo 8cm"},{code:"965265",name:"Rollo 11cm"},
+  {code:"502658",name:"Chileno 24p"},{code:"503295",name:"Chileno 4p"},
+  {code:"502754",name:"Clásico 1p"},{code:"503068",name:"Clásico 4p"},
+  {code:"502753",name:"Brandy 1p"},{code:"503117",name:"Brandy 4p"},
+  {code:"502662",name:"Delicia 24p"},{code:"503296",name:"Delicia 4p"}
+];
+let db = null;
+let currentWeek = {};
+let pedidosCache = {};
+let logsCache = [];
+let realtimeChannel = null;
+// ── WEEK CALC ──
+function getWeekInfo(date){
+  const d=new Date(date.getFullYear(),date.getMonth(),date.getDate(),12);
+  const dow=d.getDay();
+  const dfw=(dow+7-3)%7;
+  const ws=new Date(d); ws.setDate(d.getDate()-dfw);
+  const we=new Date(ws); we.setDate(ws.getDate()+6);
+  const jan1=new Date(d.getFullYear(),0,1,12);
+  const j1dfw=(jan1.getDay()+7-3)%7;
+  const yw1=new Date(jan1); yw1.setDate(jan1.getDate()-j1dfw);
+  const weekNum=1+Math.round((ws-yw1)/(7*864e5));
+  return{num:weekNum,start:ws,end:we};
+}
+function fmtISO(d){return d.toISOString().split("T")[0]}
+function fmtCL(iso){if(!iso)return"—";return new Date(iso+"T12:00:00").toLocaleDateString("es-CL",{day:"2-digit",month:"short"})}
+function fmtCLLong(iso){if(!iso)return"—";return new Date(iso+"T12:00:00").toLocaleDateString("es-CL",{weekday:"short",day:"2-digit",month:"short"})}
+// ── INIT SUPABASE ──
+async function initSupabase(){
+  const banner  = document.getElementById("config-banner");
+  const overlay = document.getElementById("loading-overlay");
+  const loadTxt = document.getElementById("loading-text");
+  const connBdg = document.getElementById("conn-badge");
+  if(SUPABASE_URL.includes("REEMPLAZA") || SUPABASE_KEY.includes("REEMPLAZA")){
+    banner.classList.remove("hidden");
+    overlay.classList.add("hidden");
+    connBdg.className="conn-badge offline";
+    connBdg.textContent="● Sin configurar";
+    return false;
+  }
+  try{
+    db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    loadTxt.textContent = "Verificando conexión...";
+    const {error} = await db.from("produccion_logs").select("id").limit(1);
+    if(error) throw error;
+    connBdg.className="conn-badge online";
+    connBdg.textContent="● En línea";
+    overlay.classList.add("hidden");
+    document.getElementById("btn-submit").disabled = false;
+    setupRealtime();
+    return true;
+  }catch(e){
+    console.error("Supabase error:", e);
+    connBdg.className="conn-badge offline";
+    connBdg.textContent="● Sin conexión";
+    overlay.classList.add("hidden");
+    showToast("⚠ Error de conexión: " + e.message, "error");
+    return false;
+  }
+}
+// ── REALTIME ──
+function setupRealtime(){
+  if(realtimeChannel) db.removeChannel(realtimeChannel);
+  realtimeChannel = db
+    .channel("produccion_realtime")
+    .on("postgres_changes",{event:"*",schema:"public",table:"produccion_logs"},()=>{ loadWeekData(); })
+    .on("postgres_changes",{event:"*",schema:"public",table:"produccion_pedidos"},()=>{ loadWeekData(); })
+    .subscribe((status)=>{
+      const badge = document.getElementById("conn-badge");
+      if(status==="SUBSCRIBED"){ badge.className="conn-badge online"; badge.textContent="● En línea"; }
+      else if(status==="CHANNEL_ERROR"){ badge.className="conn-badge offline"; badge.textContent="● Error RT"; }
+    });
+}
+// ── WEEK DATA ──
+async function loadCurrentWeek(){
+  const info = getWeekInfo(new Date());
+  currentWeek = {num:info.num, year:new Date().getFullYear(), start:fmtISO(info.start), end:fmtISO(info.end)};
+  await loadWeekData();
+}
+async function loadWeekData(){
+  if(!db) return;
+  const {num, year} = currentWeek;
+  const {data:pedData} = await db
+    .from("produccion_pedidos")
+    .select("sku_code, bandejas")
+    .eq("week_num", num)
+    .eq("year", year);
+  pedidosCache = {};
+  if(pedData) pedData.forEach(r=>{ pedidosCache[r.sku_code]=r.bandejas; });
+  const {data:logData} = await db
+    .from("produccion_logs")
+    .select("*")
+    .eq("week_num", num)
+    .eq("year", year)
+    .order("created_at",{ascending:false});
+  logsCache = logData || [];
+  refreshSupervisor();
+  if(document.getElementById("tab-registros").classList.contains("active")) renderLogs();
+}
+// ── SUPERVISOR TABLE ──
+function buildSvTable(){
+  const tbody = document.getElementById("sv-tbody");
+  tbody.innerHTML = SKUS.map((sku,i)=>`
+    <tr>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${i+1}</td>
+      <td style="text-align:center"><span class="sku-code-t">${sku.code}</span></td>
+      <td class="left"><span class="sku-name-t">${sku.name}</span></td>
+      <td><input class="num-input" type="number" id="ped-${i}" min="0" placeholder="0"
+        value="${pedidosCache[sku.code]||""}"
+        oninput="savePedido(${i})" /></td>
+      <td class="bg-man mono-num" id="sv-man-${i}">—</td>
+      <td class="bg-tar mono-num" id="sv-tar-${i}">—</td>
+      <td class="bg-noc mono-num" id="sv-noc-${i}">—</td>
+      <td class="mono-num" id="sv-tot-${i}">—</td>
+      <td>
+        <div class="mono-num" style="font-size:11px;margin-bottom:2px" id="sv-pct-${i}">—</div>
+        <div class="prog-wrap"><div class="prog-bar" id="sv-bar-${i}" style="width:0%;background:#ccc"></div></div>
+      </td>
+      <td id="sv-falt-${i}"><span style="font-family:var(--mono);font-size:12px;color:var(--muted)">—</span></td>
+      <td id="sv-bdg-${i}"><span class="badge b-empty">Sin pedido</span></td>
+    </tr>
+  `).join("");
+}
+let pedidoTimeout = {};
+async function savePedido(i){
+  const val = parseInt(document.getElementById(`ped-${i}`).value)||0;
+  const sku = SKUS[i];
+  clearTimeout(pedidoTimeout[i]);
+  pedidoTimeout[i] = setTimeout(async ()=>{
+    if(!db) return;
+    if(val > 0){
+      pedidosCache[sku.code] = val;
+      await db.from("produccion_pedidos").upsert({
+        week_num:currentWeek.num, year:currentWeek.year,
+        sku_code:sku.code, bandejas:val,
+        updated_at:new Date().toISOString()
+      },{onConflict:"week_num,year,sku_code"});
+    }else{
+      delete pedidosCache[sku.code];
+      await db.from("produccion_pedidos")
+        .delete()
+        .eq("week_num",currentWeek.num)
+        .eq("year",currentWeek.year)
+        .eq("sku_code",sku.code);
+    }
+    refreshSupervisor();
+  }, 800);
+}
+function getAccum(){
+  const acc = {};
+  SKUS.forEach(s=>{ acc[s.code]={mañana:0,tarde:0,noche:0}; });
+  logsCache.forEach(log=>{
+    if(acc[log.sku_code]!==undefined){
+      acc[log.sku_code][log.turno]=(acc[log.sku_code][log.turno]||0)+log.bandejas;
+    }
+  });
+  return acc;
+}
+function getBarColor(p){return p>=100?"#1565C0":p>=75?"#2E7D32":p>=40?"#E65100":"#C62828"}
+function getBadge(ped,tot){
+  if(!ped)return'<span class="badge b-empty">Sin pedido</span>';
+  const p=tot/ped*100;
+  if(tot>=ped)return'<span class="badge b-done">Completado</span>';
+  if(p>=75)return'<span class="badge b-ok">En curso</span>';
+  if(p>=5)return'<span class="badge b-warn">Atrasado</span>';
+  return'<span class="badge b-danger">Sin iniciar</span>';
+}
+function refreshSupervisor(){
+  const acc    = getAccum();
+  const wlabel = `Semana ${currentWeek.num}  ·  ${fmtCLLong(currentWeek.start)} → ${fmtCLLong(currentWeek.end)}`;
+  const weekEl = document.getElementById("sv-week-chip");
+  const topEl  = document.getElementById("topbar-meta");
+  if(weekEl) weekEl.textContent=`Semana ${currentWeek.num}`;
+  if(topEl)  topEl.textContent=wlabel;
+  let tP=0,tM=0,tT=0,tN=0;
+  SKUS.forEach((sku,i)=>{
+    const ped=pedidosCache[sku.code]||0;
+    const man=acc[sku.code]?.mañana||0;
+    const tar=acc[sku.code]?.tarde||0;
+    const noc=acc[sku.code]?.noche||0;
+    const tot=man+tar+noc;
+    const pct=ped>0?Math.min(Math.round(tot/ped*100),100):(tot>0?100:0);
+    const set=(id,val)=>{ const el=document.getElementById(id); if(el) el.textContent=val; };
+    set(`sv-man-${i}`,man||"—"); set(`sv-tar-${i}`,tar||"—");
+    set(`sv-noc-${i}`,noc||"—"); set(`sv-tot-${i}`,tot||"—");
+    set(`sv-pct-${i}`,ped>0?pct+"%":"—");
+    const bar=document.getElementById(`sv-bar-${i}`);
+    if(bar){ bar.style.width=Math.min(pct,100)+"%"; bar.style.background=getBarColor(pct); }
+    const bdg=document.getElementById(`sv-bdg-${i}`);
+    if(bdg) bdg.innerHTML=getBadge(ped,tot);
+    const faltEl=document.getElementById(`sv-falt-${i}`);
+    if(faltEl){
+      const falt=ped>0?Math.max(0,ped-tot):0;
+      if(ped>0&&tot<ped) faltEl.innerHTML=`<span style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--red)">${falt}</span>`;
+      else if(ped>0&&tot>=ped) faltEl.innerHTML=`<span style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--green)">0 ✓</span>`;
+      else faltEl.innerHTML=`<span style="font-family:var(--mono);font-size:12px;color:var(--muted)">—</span>`;
+    }
+    tP+=ped; tM+=man; tT+=tar; tN+=noc;
+  });
+  const tProd=tM+tT+tN;
+  const pct=tP>0?Math.round(tProd/tP*100):0;
+  document.getElementById("kpi-ped").textContent=tP.toLocaleString("es-CL");
+  document.getElementById("kpi-prod").textContent=tProd.toLocaleString("es-CL");
+  document.getElementById("kpi-man").textContent=tM.toLocaleString("es-CL");
+  document.getElementById("kpi-tar").textContent=tT.toLocaleString("es-CL");
+  document.getElementById("kpi-noc").textContent=tN.toLocaleString("es-CL");
+  const cEl=document.getElementById("kpi-cumpl");
+  if(tP>0){
+    cEl.textContent=pct+"%";
+    cEl.className="kpi-val "+(pct>=90?"ok":pct>=60?"warn":"danger");
+    document.getElementById("kpi-sub").textContent=Math.max(0,tP-tProd).toLocaleString("es-CL")+" bdjas pendientes";
+  }else{
+    cEl.textContent="—"; cEl.className="kpi-val";
+    document.getElementById("kpi-sub").textContent="ingresa pedidos";
+  }
+  document.getElementById("ft-ped").textContent=tP;
+  document.getElementById("ft-man").textContent=tM;
+  document.getElementById("ft-tar").textContent=tT;
+  document.getElementById("ft-noc").textContent=tN;
+  document.getElementById("ft-tot").textContent=tProd;
+  document.getElementById("ft-pct").textContent=tP>0?pct+"%":"—";
+  document.getElementById("ft-falt").textContent=tP>0?Math.max(0,tP-tProd):"—";
+}
+// ── OPERATOR SUBMIT ──
+function buildOpSkuList(){
+  document.getElementById("op-sku-list").innerHTML = SKUS.map((sku,i)=>`
+    <div class="sku-entry">
+      <div class="sku-info">
+        <span class="sku-name-f">${sku.name}</span>
+        <span class="sku-code-f">${sku.code}</span>
+      </div>
+      <input class="bdj-input" type="number" id="op-bdj-${i}" min="0" placeholder="0" />
+    </div>
+  `).join("");
+}
+async function submitEntry(){
+  const fecha  = document.getElementById("op-fecha").value;
+  const turno  = document.getElementById("op-turno").value;
+  const nombre = document.getElementById("op-nombre").value.trim();
+  if(!fecha)  { showToast("Por favor selecciona la fecha.","error"); return; }
+  if(!turno)  { showToast("Por favor selecciona el turno.","error"); return; }
+  if(!nombre) { showToast("Por favor ingresa tu nombre.","error"); return; }
+  if(!db)     { showToast("Sin conexión a la base de datos.","error"); return; }
+  const dateObj = new Date(fecha+"T12:00:00");
+  const wi = getWeekInfo(dateObj);
+  const rows = [];
+  SKUS.forEach((sku,i)=>{
+    const val=parseInt(document.getElementById(`op-bdj-${i}`).value)||0;
+    if(val>0) rows.push({
+      sku_code:sku.code, sku_name:sku.name,
+      fecha, turno, operador:nombre, bandejas:val,
+      week_num:wi.num, year:dateObj.getFullYear()
+    });
+  });
+  if(rows.length===0){ showToast("No ingresaste ninguna cantidad.","error"); return; }
+  const btn=document.getElementById("btn-submit");
+  btn.disabled=true; btn.textContent="Guardando...";
+  try{
+    const {error}=await db.from("produccion_logs").insert(rows);
+    if(error) throw error;
+    SKUS.forEach((_,i)=>{ document.getElementById(`op-bdj-${i}`).value=""; });
+    showToast("✓ Producción registrada correctamente.","success");
+    await loadWeekData();
+  }catch(e){
+    showToast("⚠ Error al guardar: "+e.message,"error");
+  }finally{
+    btn.disabled=false; btn.textContent="Registrar producción";
+  }
+}
+// ── LOG VIEW ──
+function renderLogs(){
+  const tbody=document.getElementById("log-tbody");
+  document.getElementById("log-count").textContent=logsCache.length+" registros";
+  if(logsCache.length===0){
+    tbody.innerHTML=`<tr><td colspan="8" style="padding:20px;color:var(--muted);text-align:center">No hay registros esta semana.</td></tr>`;
+    return;
+  }
+  const tColor={mañana:"var(--man-c)",tarde:"var(--tar-c)",noche:"var(--noc-c)"};
+  const tIcon ={mañana:"☀",tarde:"⛅",noche:"🌙"};
+  tbody.innerHTML=logsCache.map(l=>{
+    const editado=l.edited_at?`<div class="audit-badge">✏ Editado por ${l.edited_by||"?"} · ${new Date(l.edited_at).toLocaleDateString("es-CL",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</div>`:"";
+    return`<tr class="${l.edited_at?"edited-row":""}">
+      <td>${fmtCLLong(l.fecha)}</td>
+      <td style="color:${tColor[l.turno]};font-weight:500">${tIcon[l.turno]} ${l.turno}</td>
+      <td class="left">${l.operador}</td>
+      <td style="font-size:10px">${l.sku_code}</td>
+      <td class="left">${l.sku_name}</td>
+      <td style="font-weight:600;color:var(--navy)">${l.bandejas}</td>
+      <td style="font-size:10px;color:var(--muted)">${new Date(l.created_at).toLocaleTimeString("es-CL",{hour:"2-digit",minute:"2-digit"})}${editado}</td>
+      <td style="white-space:nowrap">
+        <button onclick="openEditModal('${l.id}')" style="font-family:var(--sans);font-size:10px;background:#E3F2FD;color:#1565C0;border:1px solid #90CAF9;border-radius:4px;padding:3px 8px;cursor:pointer;margin-right:4px">✏ Editar</button>
+        <button onclick="deleteLog('${l.id}')" style="font-family:var(--sans);font-size:10px;background:var(--red-l);color:var(--red);border:1px solid #EF9A9A;border-radius:4px;padding:3px 8px;cursor:pointer">✕ Borrar</button>
+      </td>
+    </tr>`;
+  }).join("");
+}
+// ── EDIT / DELETE LOGS ──
+let editingLogId=null;
+function openEditModal(id){
+  const log=logsCache.find(l=>String(l.id)===String(id));
+  if(!log) return;
+  editingLogId=id;
+  document.getElementById("edit-fecha").value=log.fecha;
+  document.getElementById("edit-turno").value=log.turno;
+  document.getElementById("edit-operador").value=log.operador;
+  document.getElementById("edit-sku-name").value=log.sku_name;
+  document.getElementById("edit-bandejas").value=log.bandejas;
+  document.getElementById("edit-supervisor").value="";
+  document.getElementById("edit-modal").classList.remove("hidden");
+}
+function closeEditModal(){
+  document.getElementById("edit-modal").classList.add("hidden");
+  editingLogId=null;
+}
+async function saveEdit(){
+  if(!editingLogId||!db) return;
+  const supervisor=document.getElementById("edit-supervisor").value.trim();
+  if(!supervisor){ alert("Debes ingresar tu nombre como supervisor que modifica."); return; }
+  const fecha   =document.getElementById("edit-fecha").value;
+  const turno   =document.getElementById("edit-turno").value;
+  const operador=document.getElementById("edit-operador").value.trim();
+  const bandejas=parseInt(document.getElementById("edit-bandejas").value)||0;
+  if(bandejas<=0){ alert("Las bandejas deben ser mayor a 0."); return; }
+  const dateObj=new Date(fecha+"T12:00:00");
+  const wi=getWeekInfo(dateObj);
+  const {error}=await db.from("produccion_logs").update({
+    fecha,turno,operador,bandejas,
+    week_num:wi.num, year:dateObj.getFullYear(),
+    edited_by:supervisor, edited_at:new Date().toISOString()
+  }).eq("id",editingLogId);
+  if(error){ alert("Error al guardar: "+error.message); return; }
+  closeEditModal();
+  await loadWeekData();
+  showToast("✓ Registro editado correctamente.","success");
+}
+async function deleteLog(id){
+  const log=logsCache.find(l=>String(l.id)===String(id));
+  if(!log) return;
+  const supervisor=prompt(`¿Eliminar este registro?\n${log.sku_name} · ${log.bandejas} bandejas · ${log.turno}\n\nIngresa tu nombre para confirmar:`);
+  if(!supervisor||!supervisor.trim()) return;
+  if(!confirm(`Confirmar eliminación de registro de ${log.operador} (${log.bandejas} bdjas ${log.sku_name})`)) return;
+  const {error}=await db.from("produccion_logs").delete().eq("id",id);
+  if(error){ showToast("⚠ Error al eliminar: "+error.message,"error"); return; }
+  await loadWeekData();
+  showToast(`✓ Registro eliminado. (Autorizado por: ${supervisor.trim()})`, "success");
+}
+// ── HISTORY ──
+async function saveToHistory(){
+  if(!db) return;
+  const acc=getAccum();
+  let tP=0,tM=0,tT=0,tN=0;
+  const rows=SKUS.map(sku=>{
+    const ped=pedidosCache[sku.code]||0;
+    const man=acc[sku.code]?.mañana||0;
+    const tar=acc[sku.code]?.tarde||0;
+    const noc=acc[sku.code]?.noche||0;
+    tP+=ped; tM+=man; tT+=tar; tN+=noc;
+    return{skuCode:sku.code,skuName:sku.name,ped,man,tar,noc,tot:man+tar+noc};
+  });
+  const tProd=tM+tT+tN;
+  const pct=tP>0?Math.round(tProd/tP*100):0;
+  if(!confirm(`¿Cerrar Semana ${currentWeek.num} al historial?\nProducido: ${tProd} / ${tP} bandejas (${pct}%)`)) return;
+  const {error}=await db.from("produccion_historial").upsert({
+    week_num:currentWeek.num, year:currentWeek.year,
+    date_start:currentWeek.start, date_end:currentWeek.end,
+    tot_ped:tP, tot_man:tM, tot_tar:tT, tot_noc:tN, tot_prod:tProd, pct,
+    rows_json:rows, saved_at:new Date().toISOString()
+  },{onConflict:"week_num,year"});
+  if(error){ showToast("⚠ Error al guardar historial: "+error.message,"error"); return; }
+  showToast(`✓ Semana ${currentWeek.num} cerrada en el historial.`,"success");
+  renderHistory();
+}
+async function clearWeek(){
+  if(!db) return;
+  if(!confirm("¿Limpiar pedidos y registros de la semana actual?")) return;
+  await db.from("produccion_logs").delete().eq("week_num",currentWeek.num).eq("year",currentWeek.year);
+  await db.from("produccion_pedidos").delete().eq("week_num",currentWeek.num).eq("year",currentWeek.year);
+  pedidosCache={}; logsCache=[];
+  buildSvTable(); refreshSupervisor();
+}
+async function clearHistory(){
+  if(!db) return;
+  if(!confirm("¿Borrar todo el historial permanentemente?")) return;
+  await db.from("produccion_historial").delete().neq("id",0);
+  renderHistory();
+}
+function ccl(p){return p>=90?"ok":p>=60?"warn":"danger"}
+async function renderHistory(){
+  if(!db) return;
+  const {data:hist}=await db.from("produccion_historial").select("*").order("year",{ascending:false}).order("week_num",{ascending:false});
+  const grid=document.getElementById("hist-grid");
+  const empty=document.getElementById("hist-empty");
+  document.getElementById("hist-count").textContent=(hist?.length||0)+" semana"+(hist?.length!==1?"s":"");
+  if(!hist||hist.length===0){ grid.innerHTML=""; grid.appendChild(empty); empty.style.display="block"; return; }
+  empty.style.display="none";
+  grid.innerHTML=hist.map((h,hi)=>{
+    const skuRows=(h.rows_json||[]).filter(r=>r.ped>0||r.tot>0).map(r=>{
+      const pct=r.ped>0?Math.round(r.tot/r.ped*100):0;
+      return`<tr><td class="left">${r.skuName}</td><td>${r.ped||"—"}</td>
+        <td style="color:var(--man-c)">${r.man||"—"}</td><td style="color:var(--tar-c)">${r.tar||"—"}</td>
+        <td style="color:var(--noc-c)">${r.noc||"—"}</td><td style="font-weight:600">${r.tot||"—"}</td>
+        <td>${r.ped>0?pct+"%":"—"}</td></tr>`;
+    }).join("");
+    const autoTag = "";
+    return`<div class="hist-card">
+      <div class="hist-card-hd" onclick="toggleHist(${hi})" id="hh-${hi}">
+        <div>
+          <div class="hist-card-title">Semana ${h.week_num} — ${h.year}${autoTag}</div>
+          <div class="hist-card-meta">${fmtCL(h.date_start)} → ${fmtCL(h.date_end)}</div>
+        </div>
+        <div style="display:flex;gap:16px;align-items:center">
+          <span style="font-size:11px;color:#7BAFD4">Guardado: ${new Date(h.saved_at).toLocaleDateString("es-CL",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span>
+          <button onclick="event.stopPropagation();deleteHist('${h.id}')" style="font-family:var(--sans);font-size:11px;border:1px solid rgba(255,100,100,.4);background:transparent;color:#EF9A9A;border-radius:4px;padding:3px 9px;cursor:pointer">Eliminar</button>
+          <span id="arr-${hi}">▼</span>
+        </div>
+      </div>
+      <div class="hist-kpis">
+        <div class="hkpi"><div class="hkpi-lbl">Pedido</div><div class="hkpi-val">${(h.tot_ped||0).toLocaleString("es-CL")}</div><div style="font-size:9px;color:var(--muted)">bandejas</div></div>
+        <div class="hkpi"><div class="hkpi-lbl">Producido</div><div class="hkpi-val ok">${(h.tot_prod||0).toLocaleString("es-CL")}</div><div style="font-size:9px;color:var(--muted)">bandejas</div></div>
+        <div class="hkpi"><div class="hkpi-lbl">Mañana</div><div class="hkpi-val" style="color:var(--man-c)">${(h.tot_man||0).toLocaleString("es-CL")}</div><div style="font-size:9px;color:var(--muted)">bandejas</div></div>
+        <div class="hkpi"><div class="hkpi-lbl">Tarde</div><div class="hkpi-val" style="color:var(--tar-c)">${(h.tot_tar||0).toLocaleString("es-CL")}</div><div style="font-size:9px;color:var(--muted)">bandejas</div></div>
+        <div class="hkpi"><div class="hkpi-lbl">Cumplimiento</div><div class="hkpi-val ${ccl(h.pct)}">${h.tot_ped>0?h.pct+"%":"—"}</div><div style="font-size:9px;color:var(--muted)">${Math.max(0,(h.tot_ped||0)-(h.tot_prod||0))} bdjas pend.</div></div>
+      </div>
+      <div class="hist-detail" id="hd-${hi}">
+        ${skuRows?`<table class="hist-table"><thead><tr><th class="left">Producto</th><th>Pedido</th>
+          <th style="color:var(--man-c)">Mañana</th><th style="color:var(--tar-c)">Tarde</th>
+          <th style="color:var(--noc-c)">Noche</th><th>Total</th><th>%</th></tr></thead>
+          <tbody>${skuRows}</tbody></table>`:'<div style="padding:12px;color:var(--muted);font-size:12px">Sin detalle de SKUs.</div>'}
+      </div>
+    </div>`;
+  }).join("");
+}
+function toggleHist(i){
+  const d=document.getElementById(`hd-${i}`);
+  const a=document.getElementById(`arr-${i}`);
+  const o=d.classList.toggle("open");
+  a.textContent=o?"▲":"▼";
+}
+async function deleteHist(id){
+  if(!confirm("¿Eliminar esta semana del historial?")) return;
+  await db.from("produccion_historial").delete().eq("id",id);
+  renderHistory();
+}
+// ── TOAST ──
+function showToast(msg, type="success"){
+  const t=document.getElementById("toast");
+  t.textContent=msg;
+  t.className="toast show "+(type==="error"?"error":"success");
+  setTimeout(()=>t.classList.remove("show"),5000);
+}
+// ── SHIFT INDICATOR ──
+document.getElementById("op-turno").addEventListener("change",function(){
+  const turno=this.value;
+  const ind=document.getElementById("shift-indicator");
+  if(!turno){ ind.style.display="none"; return; }
+  const cfg={
+    mañana:{bg:"var(--man-l)",color:"var(--man-c)",icon:"☀",label:"Turno Mañana — 06:00 a 14:00"},
+    tarde: {bg:"var(--tar-l)",color:"var(--tar-c)",icon:"⛅",label:"Turno Tarde — 14:00 a 22:00"},
+    noche: {bg:"var(--noc-l)",color:"var(--noc-c)",icon:"🌙",label:"Turno Noche — 22:00 a 06:00"},
+  }[turno];
+  ind.style.display="flex"; ind.style.background=cfg.bg; ind.style.color=cfg.color;
+  ind.innerHTML=`<span style="font-size:16px">${cfg.icon}</span><strong>${cfg.label}</strong>`;
+});
+// ── MODE / TAB ──
+function showMode(mode){
+  document.querySelectorAll("[id^=mode-]").forEach(p=>p.classList.remove("active"));
+  document.querySelectorAll(".mode-btn").forEach(b=>b.classList.remove("active"));
+  document.getElementById("mode-"+mode).classList.add("active");
+  const idx={operador:0,supervisor:1}[mode];
+  document.querySelectorAll(".mode-btn")[idx].classList.add("active");
+  if(mode==="supervisor"){ buildSvTable(); refreshSupervisor(); }
+}
+function showTab(id){
+  document.querySelectorAll("#mode-supervisor .panel").forEach(p=>p.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  document.getElementById("tab-"+id).classList.add("active");
+  const idx={resumen:0,registros:1,historial:2}[id];
+  document.querySelectorAll(".tab")[idx].classList.add("active");
+  if(id==="registros") renderLogs();
+  if(id==="historial") renderHistory();
+}
+// ── CLOCK ──
+function tick(){
+  const now=new Date();
+  document.getElementById("clock").textContent=now.toLocaleTimeString("es-CL",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  document.getElementById("today-chip").textContent=now.toLocaleDateString("es-CL",{weekday:"short",day:"2-digit",month:"short",year:"numeric"});
+}
+// ── INIT ──
+(async function(){
+  buildOpSkuList();
+  const now=new Date();
+  document.getElementById("op-fecha").value=fmtISO(now);
+  const h=now.getHours();
+  const autoShift=h>=6&&h<14?"mañana":h>=14&&h<22?"tarde":"noche";
+  document.getElementById("op-turno").value=autoShift;
+  document.getElementById("op-turno").dispatchEvent(new Event("change"));
+  const info=getWeekInfo(now);
+  currentWeek={num:info.num, year:now.getFullYear(), start:fmtISO(info.start), end:fmtISO(info.end)};
+  tick();
+  setInterval(tick,1000);
+  const ok=await initSupabase();
+  if(ok){
+    await loadCurrentWeek();
+    buildSvTable();
+    refreshSupervisor();
+  }
+})();
+</script>
+</body>
+</html>
